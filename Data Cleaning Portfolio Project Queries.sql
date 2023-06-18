@@ -1,53 +1,31 @@
-/*
+-- Start of data cleaning queries
 
-Cleaning Data in SQL Queries
-
-*/
-
-
+-- Select all data from NashvilleHousing for initial review
 Select *
 From PortfolioProject.dbo.NashvilleHousing
 
---------------------------------------------------------------------------------------------------------------------------
+-- Begin standardizing date format
 
--- Standardize Date Format
-
-
-Select saleDateConverted, CONVERT(Date,SaleDate)
-From PortfolioProject.dbo.NashvilleHousing
-
-
+-- Convert SaleDate to standard Date format
 Update NashvilleHousing
 SET SaleDate = CONVERT(Date,SaleDate)
 
--- If it doesn't Update properly
-
+-- In case of update failure, create a new column for standardized date
 ALTER TABLE NashvilleHousing
 Add SaleDateConverted Date;
 
+-- Assign converted SaleDate to new column
 Update NashvilleHousing
 SET SaleDateConverted = CONVERT(Date,SaleDate)
 
+-- Begin populating missing property address data
 
- --------------------------------------------------------------------------------------------------------------------------
-
--- Populate Property Address data
-
+-- Extract all records, ordered by ParcelID for review
 Select *
 From PortfolioProject.dbo.NashvilleHousing
---Where PropertyAddress is null
 order by ParcelID
 
-
-
-Select a.ParcelID, a.PropertyAddress, b.ParcelID, b.PropertyAddress, ISNULL(a.PropertyAddress,b.PropertyAddress)
-From PortfolioProject.dbo.NashvilleHousing a
-JOIN PortfolioProject.dbo.NashvilleHousing b
-	on a.ParcelID = b.ParcelID
-	AND a.[UniqueID ] <> b.[UniqueID ]
-Where a.PropertyAddress is null
-
-
+-- Update null PropertyAddress based on the same ParcelID
 Update a
 SET PropertyAddress = ISNULL(a.PropertyAddress,b.PropertyAddress)
 From PortfolioProject.dbo.NashvilleHousing a
@@ -56,127 +34,47 @@ JOIN PortfolioProject.dbo.NashvilleHousing b
 	AND a.[UniqueID ] <> b.[UniqueID ]
 Where a.PropertyAddress is null
 
+-- Begin breaking out address into individual columns (Address, City, State)
 
-
-
---------------------------------------------------------------------------------------------------------------------------
-
--- Breaking out Address into Individual Columns (Address, City, State)
-
-
-Select PropertyAddress
-From PortfolioProject.dbo.NashvilleHousing
---Where PropertyAddress is null
---order by ParcelID
-
-SELECT
-SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) -1 ) as Address
-, SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress) + 1 , LEN(PropertyAddress)) as Address
-
-From PortfolioProject.dbo.NashvilleHousing
-
-
+-- Create new columns for split address components
 ALTER TABLE NashvilleHousing
 Add PropertySplitAddress Nvarchar(255);
-
-Update NashvilleHousing
-SET PropertySplitAddress = SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) -1 )
-
-
 ALTER TABLE NashvilleHousing
 Add PropertySplitCity Nvarchar(255);
 
+-- Update new columns with split address components
 Update NashvilleHousing
-SET PropertySplitCity = SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress) + 1 , LEN(PropertyAddress))
+SET PropertySplitAddress = SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) -1 ),
+    PropertySplitCity = SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress) + 1 , LEN(PropertyAddress))
 
+-- Begin splitting OwnerAddress into individual components (Address, City, State)
 
-
-
-Select *
-From PortfolioProject.dbo.NashvilleHousing
-
-
-
-
-
-Select OwnerAddress
-From PortfolioProject.dbo.NashvilleHousing
-
-
-Select
-PARSENAME(REPLACE(OwnerAddress, ',', '.') , 3)
-,PARSENAME(REPLACE(OwnerAddress, ',', '.') , 2)
-,PARSENAME(REPLACE(OwnerAddress, ',', '.') , 1)
-From PortfolioProject.dbo.NashvilleHousing
-
-
-
+-- Create new columns for split OwnerAddress components
 ALTER TABLE NashvilleHousing
 Add OwnerSplitAddress Nvarchar(255);
-
-Update NashvilleHousing
-SET OwnerSplitAddress = PARSENAME(REPLACE(OwnerAddress, ',', '.') , 3)
-
-
 ALTER TABLE NashvilleHousing
 Add OwnerSplitCity Nvarchar(255);
-
-Update NashvilleHousing
-SET OwnerSplitCity = PARSENAME(REPLACE(OwnerAddress, ',', '.') , 2)
-
-
-
 ALTER TABLE NashvilleHousing
 Add OwnerSplitState Nvarchar(255);
 
+-- Update new columns with split OwnerAddress components
 Update NashvilleHousing
-SET OwnerSplitState = PARSENAME(REPLACE(OwnerAddress, ',', '.') , 1)
+SET OwnerSplitAddress = PARSENAME(REPLACE(OwnerAddress, ',', '.') , 3),
+    OwnerSplitCity = PARSENAME(REPLACE(OwnerAddress, ',', '.') , 2),
+    OwnerSplitState = PARSENAME(REPLACE(OwnerAddress, ',', '.') , 1)
 
+-- Begin changing 'Y' and 'N' to 'Yes' and 'No' in "Sold as Vacant" field
 
-
-Select *
-From PortfolioProject.dbo.NashvilleHousing
-
-
-
-
---------------------------------------------------------------------------------------------------------------------------
-
-
--- Change Y and N to Yes and No in "Sold as Vacant" field
-
-
-Select Distinct(SoldAsVacant), Count(SoldAsVacant)
-From PortfolioProject.dbo.NashvilleHousing
-Group by SoldAsVacant
-order by 2
-
-
-
-
-Select SoldAsVacant
-, CASE When SoldAsVacant = 'Y' THEN 'Yes'
-	   When SoldAsVacant = 'N' THEN 'No'
-	   ELSE SoldAsVacant
-	   END
-From PortfolioProject.dbo.NashvilleHousing
-
-
+-- Convert 'Y' and 'N' to 'Yes' and 'No' respectively
 Update NashvilleHousing
 SET SoldAsVacant = CASE When SoldAsVacant = 'Y' THEN 'Yes'
 	   When SoldAsVacant = 'N' THEN 'No'
 	   ELSE SoldAsVacant
 	   END
 
+-- Begin removing duplicate records
 
-
-
-
-
------------------------------------------------------------------------------------------------------------------------------------------------------------
-
--- Remove Duplicates
-
+-- Create a temporary table with row numbers for each record partitioned by ParcelID, PropertyAddress, SalePrice, SaleDate, LegalReference
 WITH RowNumCTE AS(
 Select *,
 	ROW_NUMBER() OVER (
@@ -190,112 +88,16 @@ Select *,
 					) row_num
 
 From PortfolioProject.dbo.NashvilleHousing
---order by ParcelID
 )
+
+-- Select duplicates for review
 Select *
 From RowNumCTE
 Where row_num > 1
 Order by PropertyAddress
 
+-- Begin deleting unused columns
 
-
-Select *
-From PortfolioProject.dbo.NashvilleHousing
-
-
-
-
----------------------------------------------------------------------------------------------------------
-
--- Delete Unused Columns
-
-
-
-Select *
-From PortfolioProject.dbo.NashvilleHousing
-
-
+-- Drop unused columns
 ALTER TABLE PortfolioProject.dbo.NashvilleHousing
 DROP COLUMN OwnerAddress, TaxDistrict, PropertyAddress, SaleDate
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
------------------------------------------------------------------------------------------------
------------------------------------------------------------------------------------------------
-
---- Importing Data using OPENROWSET and BULK INSERT	
-
---  More advanced and looks cooler, but have to configure server appropriately to do correctly
---  Wanted to provide this in case you wanted to try it
-
-
---sp_configure 'show advanced options', 1;
---RECONFIGURE;
---GO
---sp_configure 'Ad Hoc Distributed Queries', 1;
---RECONFIGURE;
---GO
-
-
---USE PortfolioProject 
-
---GO 
-
---EXEC master.dbo.sp_MSset_oledb_prop N'Microsoft.ACE.OLEDB.12.0', N'AllowInProcess', 1 
-
---GO 
-
---EXEC master.dbo.sp_MSset_oledb_prop N'Microsoft.ACE.OLEDB.12.0', N'DynamicParameters', 1 
-
---GO 
-
-
----- Using BULK INSERT
-
---USE PortfolioProject;
---GO
---BULK INSERT nashvilleHousing FROM 'C:\Temp\SQL Server Management Studio\Nashville Housing Data for Data Cleaning Project.csv'
---   WITH (
---      FIELDTERMINATOR = ',',
---      ROWTERMINATOR = '\n'
---);
---GO
-
-
----- Using OPENROWSET
---USE PortfolioProject;
---GO
---SELECT * INTO nashvilleHousing
---FROM OPENROWSET('Microsoft.ACE.OLEDB.12.0',
---    'Excel 12.0; Database=C:\Users\alexf\OneDrive\Documents\SQL Server Management Studio\Nashville Housing Data for Data Cleaning Project.csv', [Sheet1$]);
---GO
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
